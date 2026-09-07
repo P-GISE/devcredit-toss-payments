@@ -4,6 +4,28 @@
 
 사용자는 회원가입 후 API Key를 발급받고, 샘플 API를 호출하면 크레딧이 차감됩니다. 크레딧 충전은 Toss Payments 테스트 결제 승인 흐름으로 처리합니다.
 
+## 한눈에 보기
+
+| 항목 | 내용 |
+| --- | --- |
+| 한국어 프로젝트명 | 토스페이먼츠 결제 학습 프로젝트 |
+| 저장소 성격 | API key + 크레딧 과금 + Toss Payments 결제 실습용 SaaS |
+| 주요 사용자 | 결제 승인/크레딧 차감 흐름을 학습하려는 개발자 |
+| 실행 형태 | Next.js App Router |
+| DB | PostgreSQL + Prisma |
+| 결제 | Toss Payments 테스트 결제창과 Confirm API |
+| 인증 | 이메일/비밀번호 세션 인증 |
+
+## 서비스 사용 흐름
+
+1. 사용자가 회원가입 후 로그인합니다.
+2. Dashboard에서 API Key를 발급합니다.
+3. 발급된 API Key 원문은 한 번만 표시되고, DB에는 hash와 prefix만 저장됩니다.
+4. 사용자가 Demo API를 호출하면 API Key Bearer 인증을 통과한 뒤 크레딧이 차감됩니다.
+5. 크레딧이 부족하면 `/billing`에서 결제 패키지를 선택합니다.
+6. Toss Payments 결제창이 열리고, 성공 redirect 후 서버가 Confirm API를 호출합니다.
+7. 결제 완료 시 Payment, User creditBalance, CreditLedger가 하나의 transaction으로 갱신됩니다.
+
 ## 주요 기능
 
 - 이메일/비밀번호 기반 회원가입과 로그인
@@ -101,6 +123,29 @@ http://localhost:3000
 7. 응답이 `DONE`이면 DB transaction 안에서 Payment 상태 변경, User 크레딧 증가, CreditLedger 기록을 함께 처리합니다.
 8. 이미 완료된 결제는 다시 충전하지 않습니다.
 
+## 주요 데이터 모델
+
+| 모델 | 설명 |
+| --- | --- |
+| `User` | 로그인 사용자와 현재 크레딧 잔액 |
+| `ApiKey` | API Key hash, prefix, 상태, 마지막 사용 시각 |
+| `CreditPackage` | 판매할 크레딧 패키지 |
+| `Payment` | Toss 결제 준비/승인/실패 상태 |
+| `CreditLedger` | 충전, 사용, 환불, 조정 이력 |
+| `UsageLog` | API 호출 비용, 응답 코드, request id |
+
+## 주요 화면과 API
+
+- `/signup`, `/login`: 인증 화면
+- `/dashboard`: API Key 발급과 현재 크레딧 확인
+- `/usage`: API 사용 로그 확인
+- `/billing`: 크레딧 패키지 선택과 결제 시작
+- `/billing/success`: Toss 결제 성공 redirect 처리
+- `/api/api-keys`: API Key 발급/조회
+- `/api/demo/ping`: 크레딧을 차감하는 샘플 API
+- `/api/payments/prepare`: 결제 준비
+- `/api/payments/confirm`: 결제 승인
+
 ## Demo API
 
 Dashboard에서 API Key를 발급한 뒤 호출합니다.
@@ -116,6 +161,13 @@ curl http://localhost:3000/api/demo/ping \
 - 결제 승인은 금액 검증, Toss Confirm API, DB transaction을 한 서비스 흐름으로 묶었습니다.
 - 완료된 결제의 중복 승인 요청은 추가 충전 없이 같은 결과를 반환하도록 처리했습니다.
 - 크레딧 증감 이력을 CreditLedger로 분리해 결제와 API 사용 기록을 추적할 수 있습니다.
+
+## Toss Payments 테스트 메모
+
+- Toss 테스트 client key는 브라우저에서 결제창을 여는 데 사용됩니다.
+- Toss secret key는 서버의 Confirm API 호출에만 사용하고 공개 저장소에 올리지 않습니다.
+- 결제 승인 시 요청 금액과 DB에 저장된 Payment 금액을 비교해 클라이언트 조작을 막습니다.
+- `Idempotency-Key`를 사용해 같은 결제 승인 요청이 반복되어도 중복 충전되지 않게 처리합니다.
 
 ## 검증
 
