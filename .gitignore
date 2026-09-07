@@ -1,0 +1,14 @@
+.next
+node_modules
+coverage
+.env
+.env.local
+*.log
+dist
+prisma/dev.db
+.playwright-cli
+output
+test-results
+playwright-report
+tsconfig.tsbuildinfo
+*.pid
