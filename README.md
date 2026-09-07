@@ -16,6 +16,33 @@
 | 결제 | Toss Payments 테스트 결제창과 Confirm API |
 | 인증 | 이메일/비밀번호 세션 인증 |
 
+## 소스 검토 기준
+
+이 README는 `src/app`, `src/lib`, `prisma/schema.prisma`, `tests`, `package.json`, `.env.example`을 기준으로 다시 작성했습니다. 실제 `.env`, 결제 시크릿, DB 파일, `node_modules`, 빌드 산출물은 문서 근거에서 제외했습니다.
+
+검토 결과 이 프로젝트는 Toss Payments 결제창만 붙인 예제가 아니라, 크레딧 상품 구매, 결제 준비/승인, 중복 승인 방지, 크레딧 원장, API Key 발급/폐기, 사용량 차감, 데모 API 호출까지 이어지는 작은 SaaS 과금 흐름입니다.
+
+## 소스 기준 기능 지도
+
+| 기능 영역 | 확인한 주요 파일 | 실제로 구현된 내용 |
+| --- | --- | --- |
+| 화면 라우트 | `src/app/**/page.tsx` | 랜딩, 회원가입/로그인, 대시보드, 크레딧 구매, 결제 성공/실패, 사용량 화면 |
+| 결제 API | `src/app/api/payments/prepare`, `src/app/api/payments/confirm`, `src/lib/payments.ts`, `src/lib/toss.ts` | 결제 주문 생성, Toss 승인 요청, 금액/상태 검증, idempotency key 사용 |
+| 크레딧 처리 | `src/lib/payment-service.ts`, `src/lib/credits.ts` | 결제 완료 시 사용자 잔액 증가, 크레딧 원장 기록, 중복 승인 방지 |
+| API Key | `src/app/api/api-keys`, `src/lib/api-keys.ts` | API Key 생성, 해시 저장, 생성 직후 1회만 평문 표시, 폐기 처리 |
+| Demo API | `src/app/api/demo/*`, `src/lib/demo-api.ts` | Bearer API Key 인증 후 데모 엔드포인트 사용량 기록과 크레딧 차감 |
+| 인증/환경 | `src/lib/auth.ts`, `src/lib/session.ts`, `src/lib/env.ts` | 이메일/비밀번호 세션 인증, 필수 환경변수 zod 검증 |
+| DB 모델 | `prisma/schema.prisma` | 사용자, API Key, 크레딧 상품, 결제, 크레딧 원장, 사용 로그 |
+| 테스트 | `tests/**/*.test.ts` | API Key, 크레딧, 결제 승인, Toss 오류, 회원가입 오류 흐름 검증 |
+
+## 처음 검토할 때 볼 순서
+
+1. `prisma/schema.prisma`에서 결제와 크레딧 원장 구조를 확인합니다.
+2. `src/lib/payments.ts`와 `src/lib/payment-service.ts`에서 결제 준비/완료의 핵심 규칙을 확인합니다.
+3. `src/app/api/payments`에서 외부 결제 승인 API가 어떻게 노출되는지 봅니다.
+4. `src/app/api/api-keys`와 `src/app/api/demo`를 보면 크레딧이 실제 API 사용으로 이어지는 흐름을 볼 수 있습니다.
+5. `tests`를 보면 중복 결제, 금액 불일치, Toss 오류, API Key 폐기 같은 위험 지점을 어떻게 검증했는지 확인할 수 있습니다.
+
 ## 서비스 사용 흐름
 
 1. 사용자가 회원가입 후 로그인합니다.
