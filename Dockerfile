@@ -5,6 +5,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 FROM dependencies AS tools
+ARG REVISION_SHA
+LABEL org.opencontainers.image.revision=$REVISION_SHA
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 COPY src/lib/prisma.ts ./src/lib/prisma.ts
@@ -19,6 +21,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM node:24-bookworm-slim AS runner
+ARG REVISION_SHA
+LABEL org.opencontainers.image.revision=$REVISION_SHA
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=build --chown=node:node /app/.next/standalone ./

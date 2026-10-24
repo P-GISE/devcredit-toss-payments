@@ -32,7 +32,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run typecheck
-      - run: docker compose -f compose.production.yaml --profile tools build
+      - run: docker compose -f compose.production.yaml --profile tools build --build-arg REVISION_SHA="$GITHUB_SHA"
       - name: Missing settings must stop the production server
         run: |
           set +e
@@ -54,3 +54,39 @@ jobs:
       - name: Remove only disposable CI containers and data
         if: always()
         run: docker compose -f compose.production.yaml --profile tools down -v
+      - name: Package verified immutable image
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect devcredit:ci --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$GITHUB_SHA"
+          docker tag devcredit:ci devcredit:$GITHUB_SHA
+          mkdir -p release
+          docker save devcredit:$GITHUB_SHA | gzip > release/image.tar.gz
+          (cd release && sha256sum image.tar.gz > image.sha256)
+          echo "$GITHUB_SHA" > release/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: five-sites-app-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Package verified tools image for manual initial database setup only
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect devcredit-tools:ci --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$GITHUB_SHA"
+          docker tag devcredit-tools:ci devcredit-tools:$GITHUB_SHA
+          mkdir -p tools-release
+          docker save devcredit-tools:$GITHUB_SHA | gzip > tools-release/image.tar.gz
+          (cd tools-release && sha256sum image.tar.gz > image.sha256)
+          echo "$GITHUB_SHA" > tools-release/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: devcredit-tools-${{ github.sha }}
+          path: tools-release/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
