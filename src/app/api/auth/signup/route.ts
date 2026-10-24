@@ -15,11 +15,11 @@ const SignupSchema = z.object({
 })
 
 function signupRedirect(request: NextRequest, path: string, error?: string): NextResponse {
-  const url = new URL(path, request.url)
+  const url = new URL(path, getEnv().APP_URL)
   if (error !== undefined) {
     url.searchParams.set("error", error)
   }
-  return NextResponse.redirect(url)
+  return NextResponse.redirect(url, 303)
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

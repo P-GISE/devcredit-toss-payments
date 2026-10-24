@@ -1,0 +1,56 @@
+name: Deployment preparation
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_VERSION: ci
+      APP_PORT: 3504
+      POSTGRES_PASSWORD: synthetic-ci-database
+      DATABASE_URL: postgresql://devcredit:synthetic-ci-database@db:5432/devcredit
+      NEXTAUTH_SECRET: synthetic-session-secret-for-ci-only
+      API_KEY_PEPPER: synthetic-api-pepper-for-ci-only-123
+      APP_URL: https://devcredit.example.invalid
+      NEXTAUTH_URL: https://devcredit.example.invalid
+      TOSS_CLIENT_KEY: test_ck_synthetic_not_a_real_key
+      TOSS_SECRET_KEY: test_sk_synthetic_not_a_real_key
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - run: npm run typecheck
+      - run: docker compose -f compose.production.yaml --profile tools build
+      - name: Missing settings must stop the production server
+        run: |
+          set +e
+          timeout 20s docker run --rm --name devcredit-invalid devcredit:ci
+          result=$?
+          docker rm -f devcredit-invalid >/dev/null 2>&1 || true
+          set -e
+          if [ "$result" -ne 1 ]; then
+            echo 'Server unexpectedly accepted missing configuration'
+            exit 1
+          fi
+      - name: Initialize only the disposable CI database
+        run: |
+          docker compose -f compose.production.yaml up -d --wait db
+          docker compose -f compose.production.yaml --profile tools run --rm migrate
+          docker compose -f compose.production.yaml --profile tools run --rm migrate npx prisma db seed
+          docker compose -f compose.production.yaml up -d --wait app
+      - run: node scripts/smoke.mjs
+      - name: Remove only disposable CI containers and data
+        if: always()
+        run: docker compose -f compose.production.yaml --profile tools down -v

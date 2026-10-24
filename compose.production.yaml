@@ -1,0 +1,64 @@
+name: devcredit
+services:
+  app:
+    image: devcredit:${APP_VERSION:?Set the immutable release SHA}
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${APP_PORT:-3504}:3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set the project database URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set a random session secret}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:?Set a random API pepper}
+      APP_URL: ${APP_URL:?Set the public HTTPS origin}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?Set the same HTTPS origin}
+      TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:?Set a test client key}
+      TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:?Set a test secret key}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [web, database]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: devcredit
+      POSTGRES_DB: devcredit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a random database password}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks: [database]
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devcredit -d devcredit"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  migrate:
+    profiles: [tools]
+    image: devcredit-tools:${APP_VERSION:?Set the immutable release SHA}
+    build:
+      context: .
+      target: tools
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set the project database URL}
+    networks: [database]
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npx", "prisma", "migrate", "deploy"]
+networks:
+  web:
+  database:
+    internal: true
+volumes:
+  postgres:
