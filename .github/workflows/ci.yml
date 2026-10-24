@@ -1,0 +1,92 @@
+name: Deployment preparation
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_VERSION: ci
+      APP_PORT: 3504
+      POSTGRES_PASSWORD: synthetic-ci-database
+      DATABASE_URL: postgresql://devcredit:synthetic-ci-database@db:5432/devcredit
+      NEXTAUTH_SECRET: synthetic-session-secret-for-ci-only
+      API_KEY_PEPPER: synthetic-api-pepper-for-ci-only-123
+      APP_URL: https://devcredit.example.invalid
+      NEXTAUTH_URL: https://devcredit.example.invalid
+      TOSS_CLIENT_KEY: test_ck_synthetic_not_a_real_key
+      TOSS_SECRET_KEY: test_sk_synthetic_not_a_real_key
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - run: npm run typecheck
+      - run: docker compose -f compose.production.yaml --profile tools build --build-arg REVISION_SHA="$GITHUB_SHA"
+      - name: Missing settings must stop the production server
+        run: |
+          set +e
+          timeout 20s docker run --rm --name devcredit-invalid devcredit:ci
+          result=$?
+          docker rm -f devcredit-invalid >/dev/null 2>&1 || true
+          set -e
+          if [ "$result" -ne 1 ]; then
+            echo 'Server unexpectedly accepted missing configuration'
+            exit 1
+          fi
+      - name: Initialize only the disposable CI database
+        run: |
+          docker compose -f compose.production.yaml up -d --wait db
+          docker compose -f compose.production.yaml --profile tools run --rm migrate
+          docker compose -f compose.production.yaml --profile tools run --rm migrate npx prisma db seed
+          docker compose -f compose.production.yaml up -d --wait app
+      - run: node scripts/smoke.mjs
+      - name: Remove only disposable CI containers and data
+        if: always()
+        run: docker compose -f compose.production.yaml --profile tools down -v
+      - name: Package verified immutable image
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect devcredit:ci --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$GITHUB_SHA"
+          docker tag devcredit:ci devcredit:$GITHUB_SHA
+          mkdir -p release
+          docker save devcredit:$GITHUB_SHA | gzip > release/image.tar.gz
+          (cd release && sha256sum image.tar.gz > image.sha256)
+          echo "$GITHUB_SHA" > release/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: five-sites-app-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Package verified tools image for manual initial database setup only
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect devcredit-tools:ci --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$GITHUB_SHA"
+          docker tag devcredit-tools:ci devcredit-tools:$GITHUB_SHA
+          mkdir -p tools-release
+          docker save devcredit-tools:$GITHUB_SHA | gzip > tools-release/image.tar.gz
+          (cd tools-release && sha256sum image.tar.gz > image.sha256)
+          echo "$GITHUB_SHA" > tools-release/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: devcredit-tools-${{ github.sha }}
+          path: tools-release/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

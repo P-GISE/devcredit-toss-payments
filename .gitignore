@@ -3,6 +3,7 @@ node_modules
 coverage
 .env
 .env.local
+.env.production
 *.log
 dist
 prisma/dev.db
