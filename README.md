@@ -2,6 +2,12 @@
 
 개발자용 API 크레딧 충전 SaaS 예제입니다.
 
+공개 사이트: **https://devcredit.pigs0516.com** · [운영·자동배포·롤백 안내](docs/deployment.md)
+
+AWS에서 전용 Compose·네트워크·PostgreSQL·볼륨·환경설정으로 운영합니다. `main` 업데이트의 CI가 성공하면 서버 timer가 검증한 이미지를 받아 DevCredit 앱만 재배포합니다. 서버 재부팅과 DB 재시작은 하지 않습니다. 방문자는 Tailscale 없이 접속하며 Tailscale은 관리 접속용입니다.
+
+현재 결제는 Toss **test 모드**이고 초기 크레딧 상품3개를 구성했습니다. 공개 HTTPS 가입·로그인·API key 권한을 합성 데이터로 확인했으며, 실제/테스트 결제 생성·승인과 모바일 실기기는 아직 검증하지 않았습니다.
+
 사용자는 회원가입 후 API Key를 발급받고, 샘플 API를 호출하면 크레딧이 차감됩니다. 크레딧 충전은 Toss Payments 테스트 결제 승인 흐름으로 처리합니다.
 
 ## 한눈에 보기
