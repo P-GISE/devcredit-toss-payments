@@ -5,6 +5,7 @@ import { createApiKey, hashApiKey } from "@/lib/api-keys"
 import { requireApiUser } from "@/lib/auth/current-user"
 import { getEnv } from "@/lib/env"
 import { getPrisma } from "@/lib/prisma"
+import { rejectCrossOrigin } from "@/lib/auth/request-security"
 
 const CreateApiKeySchema = z.object({
   mode: z.enum(["live", "test"]).default("test"),
@@ -35,6 +36,8 @@ export async function GET(): Promise<NextResponse> {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    const rejection = rejectCrossOrigin(request.headers)
+    if (rejection !== null) return rejection
     const user = await requireApiUser()
     const body: unknown = await request.json()
     const input = CreateApiKeySchema.parse(body)

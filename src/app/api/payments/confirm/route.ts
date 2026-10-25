@@ -8,6 +8,7 @@ import { completePaymentOnce, markPaymentFailed } from "@/lib/payment-service"
 import { validatePaymentConfirmation, validateTossApproval } from "@/lib/payments"
 import { getPrisma } from "@/lib/prisma"
 import { confirmTossPayment, TossConfirmError } from "@/lib/toss"
+import { rejectCrossOrigin } from "@/lib/auth/request-security"
 
 const ConfirmPaymentSchema = z.object({
   paymentKey: z.string().min(1),
@@ -17,6 +18,8 @@ const ConfirmPaymentSchema = z.object({
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    const rejection = rejectCrossOrigin(request.headers)
+    if (rejection !== null) return rejection
     const user = await requireApiUser()
     const body: unknown = await request.json()
     const input = ConfirmPaymentSchema.parse(body)

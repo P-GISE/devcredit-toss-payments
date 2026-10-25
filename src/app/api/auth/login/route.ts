@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
-import { apiError } from "@/lib/api-errors"
+import { ApiError, apiError } from "@/lib/api-errors"
 import { getSessionCookieOptions, SESSION_COOKIE_NAME, createSessionToken } from "@/lib/auth/session"
 import { verifyPassword } from "@/lib/auth/password"
 import { getEnv } from "@/lib/env"
 import { getPrisma } from "@/lib/prisma"
+import { guardAuthAccount, guardAuthRequest, readAuthForm } from "@/lib/auth/request-security"
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -21,11 +22,15 @@ function authRedirect(request: NextRequest, path: string, error?: string): NextR
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const formData = await request.formData()
+    const rejection = guardAuthRequest(request.headers)
+    if (rejection !== null) return rejection
+    const formData = await readAuthForm(request)
     const input = LoginSchema.parse({
       email: String(formData.get("email") ?? "").toLowerCase(),
       password: String(formData.get("password") ?? "")
     })
+    const accountRejection = guardAuthAccount(input.email)
+    if (accountRejection !== null) return accountRejection
     const user = await getPrisma().user.findUnique({ where: { email: input.email } })
 
     if (user === null || !(await verifyPassword(input.password, user.passwordHash))) {
@@ -40,6 +45,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
     return response
   } catch (error: unknown) {
+    if (error instanceof ApiError) return apiError(error)
     if (request.headers.get("accept")?.includes("application/json") === true) {
       return apiError(error)
     }
