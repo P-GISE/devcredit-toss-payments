@@ -4,6 +4,7 @@ import { z } from "zod"
 import { ApiError, apiError, apiOk, assertFound } from "@/lib/api-errors"
 import { requireApiUser } from "@/lib/auth/current-user"
 import { getPrisma } from "@/lib/prisma"
+import { rejectCrossOrigin } from "@/lib/auth/request-security"
 
 const PreparePaymentSchema = z.object({
   packageId: z.string().min(1)
@@ -15,6 +16,8 @@ function createOrderId(): string {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    const rejection = rejectCrossOrigin(request.headers)
+    if (rejection !== null) return rejection
     const user = await requireApiUser()
     const body: unknown = await request.json()
     const input = PreparePaymentSchema.parse(body)

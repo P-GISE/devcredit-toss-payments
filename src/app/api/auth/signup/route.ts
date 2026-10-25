@@ -7,6 +7,7 @@ import { createSessionToken, getSessionCookieOptions, SESSION_COOKIE_NAME } from
 import { getSignupFailureMessage, getSignupFailureStatus, logSignupFailure } from "@/lib/auth/signup-errors"
 import { getEnv } from "@/lib/env"
 import { getPrisma } from "@/lib/prisma"
+import { guardAuthAccount, guardAuthRequest, readAuthForm } from "@/lib/auth/request-security"
 
 const SignupSchema = z.object({
   email: z.string().email(),
@@ -24,13 +25,17 @@ function signupRedirect(request: NextRequest, path: string, error?: string): Nex
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const formData = await request.formData()
+    const rejection = guardAuthRequest(request.headers)
+    if (rejection !== null) return rejection
+    const formData = await readAuthForm(request)
     const rawName = String(formData.get("name") ?? "").trim()
     const input = SignupSchema.parse({
       email: String(formData.get("email") ?? "").toLowerCase(),
       password: String(formData.get("password") ?? ""),
       name: rawName.length > 0 ? rawName : undefined
     })
+    const accountRejection = guardAuthAccount(input.email)
+    if (accountRejection !== null) return accountRejection
     const user = await getPrisma().user.create({
       data: {
         email: input.email,
@@ -47,6 +52,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
     return response
   } catch (error: unknown) {
+    if (error instanceof ApiError) return apiError(error)
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return signupRedirect(request, "/signup", "이미 가입된 이메일입니다.")
     }
