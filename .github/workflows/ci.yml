@@ -7,7 +7,10 @@ on:
 permissions:
   contents: read
 jobs:
+  security:
+    uses: ./.github/workflows/security-gate.yml
   verify:
+    needs: ["security"]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -23,8 +26,10 @@ jobs:
       TOSS_SECRET_KEY: test_sk_synthetic_not_a_real_key
       NEXT_TELEMETRY_DISABLED: 1
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
           cache: npm
@@ -64,7 +69,7 @@ jobs:
           docker save devcredit:$GITHUB_SHA | gzip > release/image.tar.gz
           (cd release && sha256sum image.tar.gz > image.sha256)
           echo "$GITHUB_SHA" > release/revision.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: github.event_name == 'push'
         with:
           name: five-sites-app-${{ github.sha }}
@@ -82,7 +87,7 @@ jobs:
           docker save devcredit-tools:$GITHUB_SHA | gzip > tools-release/image.tar.gz
           (cd tools-release && sha256sum image.tar.gz > image.sha256)
           echo "$GITHUB_SHA" > tools-release/revision.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: github.event_name == 'push'
         with:
           name: devcredit-tools-${{ github.sha }}
