@@ -37,15 +37,19 @@ jobs:
         with:
           python-version: "3.12"
       - name: Runtime image security gate regressions
-        run: python -m unittest discover -s scripts/security -p test_image_gate.py -v
+        run: python -m unittest discover -s scripts/security -p 'test_*.py' -v
       - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: npm run build
       - run: npm run typecheck
       - run: docker compose -f compose.production.yaml --profile tools build --build-arg REVISION_SHA="$GITHUB_SHA"
+      - name: Verify musl native runtime and Prisma tools without external requests
+        run: |
+          docker run --rm --network none --entrypoint node devcredit:ci -e 'require("sharp")({create:{width:2,height:2,channels:4,background:"#000000"}}).resize(1,1).png().toBuffer().then(b=>{if(!b.length)process.exit(1)}).catch(()=>process.exit(1))'
+          docker run --rm --network none --entrypoint sh devcredit-tools:ci -ec 'test -s /etc/alpine-release; openssl version >/dev/null; npx --no-install prisma --version >/dev/null'
       - name: Gate the standalone app image OS and Node libraries
         run: |
-          docker run --rm --network none --entrypoint sh devcredit:ci -ec 'for tool in npm npx yarn yarnpkg; do test -z "$(command -v "$tool")"; done; node --version >/dev/null'
+          docker run --rm --network none --entrypoint sh devcredit:ci -ec 'test -s /etc/alpine-release; for tool in npm npx yarn yarnpkg; do test -z "$(command -v "$tool")"; done; node --version >/dev/null'
           image_id=$(docker image inspect devcredit:ci --format '{{.Id}}')
           bash scripts/security/scan-image.sh "$image_id"
       - name: Missing settings must stop the production server
