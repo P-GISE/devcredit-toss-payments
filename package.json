@@ -36,7 +36,7 @@
     "tailwindcss": "latest",
     "tsx": "latest",
     "typescript": "latest",
-    "vitest": "latest"
+    "vitest": "^4.1.12"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
