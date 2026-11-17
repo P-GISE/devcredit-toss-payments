@@ -59,12 +59,15 @@ describe("bounded authentication counters", () => {
     expect(limiter.account(" OWNER@example.invalid ")?.status).toBe(429)
   })
 
-  it("applies a process-wide cap across visitor addresses", () => {
-    const limiter = new AuthRequestLimiter(() => 0)
+  it("reopens the global burst budget after one second instead of locking everyone for fifteen minutes", () => {
+    let now = 0
+    const limiter = new AuthRequestLimiter(() => now)
     for (let i = 0; i < 200; i += 1) {
       expect(limiter.request(new Headers({ "cf-connecting-ip": `192.0.2.${Math.floor(i / 20) + 1}` }))).toBeNull()
     }
     expect(limiter.request(new Headers({ "cf-connecting-ip": "192.0.2.200" }))?.status).toBe(429)
+    now = 1000
+    expect(limiter.request(new Headers({ "cf-connecting-ip": "192.0.2.200" }))).toBeNull()
   })
 
   it("accepts requests again at expiry without sliding an attacked account's window", () => {
@@ -77,14 +80,20 @@ describe("bounded authentication counters", () => {
     expect(limiter.account("owner@example.invalid")).toBeNull()
   })
 
-  it("fails closed when the key budget is full and reclaims expired counters", () => {
-    let now = 0
-    const limiter = new AuthRequestLimiter(() => now)
-    for (let i = 0; i < 4096; i += 1) expect(limiter.account(`synthetic-${i}@example.invalid`)).toBeNull()
-    expect(limiter.account("overflow@example.invalid")?.status).toBe(429)
-    now = 900_000
-    expect(limiter.account("overflow@example.invalid")).toBeNull()
+  it("does not exhaust unrelated accounts by filling the old key budget", () => {
+    const limiter = new AuthRequestLimiter(() => 0)
+    for (let i = 0; i < 5000; i++) limiter.account("synthetic-" + i + "@example.invalid")
+    expect(limiter.account("fresh@example.invalid")).toBeNull()
   })
+
+  it("does not let another client lock an account", () => {
+    const limiter = new AuthRequestLimiter(() => 0)
+    const first = new Headers({ "cf-connecting-ip": "192.0.2.1" })
+    for (let i = 0; i < 10; i++) limiter.account("owner@example.invalid", first)
+    expect(limiter.account("owner@example.invalid", first)?.status).toBe(429)
+    expect(limiter.account("owner@example.invalid", new Headers({ "cf-connecting-ip": "192.0.2.2" }))).toBeNull()
+  })
+
 })
 
 afterEach(() => {

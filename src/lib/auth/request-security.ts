@@ -1,11 +1,12 @@
-import { createHash } from "node:crypto"
+import { createHmac, randomBytes } from "node:crypto"
 import { isIP } from "node:net"
 import { NextResponse } from "next/server"
 import { getEnv } from "@/lib/env"
 import { ApiError } from "@/lib/api-errors"
 
 const WINDOW_MS = 15 * 60 * 1000
-const MAX_KEYS = 4096
+const MAX_KEYS = 65536
+const bucketSecret = randomBytes(32)
 type Counter = { count: number; readonly resetAt: number }
 type Rule = { readonly key: string; readonly limit: number }
 
@@ -16,21 +17,22 @@ function limited(retryAfter: number): NextResponse {
 }
 
 function identifier(value: string): string {
-  return createHash("sha256").update(value).digest("hex")
+  return String(createHmac("sha256", bucketSecret).update(value).digest().readUInt32BE(0) % MAX_KEYS)
 }
 
 export class AuthRequestLimiter {
   private readonly counters = new Map<string, Counter>()
+  private global: Counter = { count: 0, resetAt: 0 }
 
   constructor(private readonly now: () => number = Date.now) {}
 
   private consume(rules: readonly Rule[]): NextResponse | null {
     const now = this.now()
-    for (const [key, counter] of this.counters) {
-      if (counter.resetAt <= now) this.counters.delete(key)
+    // shortcut: fixed buckets may share quotas; use shared storage before scaling replicas.
+    for (const rule of rules) {
+      const counter = this.counters.get(rule.key)
+      if (counter && counter.resetAt <= now) this.counters.delete(rule.key)
     }
-    const newKeys = rules.filter((rule) => !this.counters.has(rule.key)).length
-    if (this.counters.size + newKeys > MAX_KEYS) return limited(60)
     for (const rule of rules) {
       const counter = this.counters.get(rule.key)
       if (counter !== undefined && counter.count >= rule.limit) {
@@ -46,14 +48,20 @@ export class AuthRequestLimiter {
   }
 
   request(headers: Headers): NextResponse | null {
+    const now = this.now()
+    if (this.global.resetAt <= now) this.global = { count: 0, resetAt: now + 1000 }
+    if (this.global.count >= 200) return limited(1)
+    this.global.count += 1
     // Production ingress is loopback-only Cloudflare Tunnel; arbitrary X-Forwarded-For is never trusted.
     const visitor = headers.get("cf-connecting-ip") ?? ""
     const client = isIP(visitor) !== 0 ? visitor : "unknown"
-    return this.consume([{ key: "global", limit: 200 }, { key: `client:${identifier(client)}`, limit: 20 }])
+    return this.consume([{ key: `client:${identifier(client)}`, limit: 20 }])
   }
 
-  account(email: string): NextResponse | null {
-    return this.consume([{ key: `account:${identifier(email.trim().toLowerCase())}`, limit: 10 }])
+  account(email: string, headers: Headers = new Headers()): NextResponse | null {
+    const visitor = headers.get("cf-connecting-ip") ?? ""
+    const client = isIP(visitor) !== 0 ? visitor : "unknown"
+    return this.consume([{ key: `account:${identifier(client + ":" + email.trim().toLowerCase())}`, limit: 10 }])
   }
 }
 
@@ -89,8 +97,8 @@ export function guardAuthRequest(headers: Headers): NextResponse | null {
   return rejectCrossOrigin(headers) ?? limiter().request(headers)
 }
 
-export function guardAuthAccount(email: string): NextResponse | null {
-  return limiter().account(email)
+export function guardAuthAccount(email: string, headers: Headers): NextResponse | null {
+  return limiter().account(email, headers)
 }
 
 export async function readAuthForm(request: Request): Promise<URLSearchParams> {

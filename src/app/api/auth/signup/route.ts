@@ -34,7 +34,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       password: String(formData.get("password") ?? ""),
       name: rawName.length > 0 ? rawName : undefined
     })
-    const accountRejection = guardAuthAccount(input.email)
+    const accountRejection = guardAuthAccount(input.email, request.headers)
     if (accountRejection !== null) return accountRejection
     const user = await getPrisma().user.create({
       data: {
