@@ -29,7 +29,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       email: String(formData.get("email") ?? "").toLowerCase(),
       password: String(formData.get("password") ?? "")
     })
-    const accountRejection = guardAuthAccount(input.email)
+    const accountRejection = guardAuthAccount(input.email, request.headers)
     if (accountRejection !== null) return accountRejection
     const user = await getPrisma().user.findUnique({ where: { email: input.email } })
 
