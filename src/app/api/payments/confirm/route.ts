@@ -54,19 +54,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         break
     }
 
-    let tossResponse
-    try {
-      tossResponse = await confirmTossPayment({
+    // A missing approval response is ambiguous; retry PENDING with the same idempotency key.
+    const tossResponse = await confirmTossPayment({
         secretKey: getEnv().TOSS_SECRET_KEY,
         paymentKey: input.paymentKey,
         orderId: input.orderId,
         amount: payment.amount
       })
-    } catch (error: unknown) {
-      const reason = error instanceof TossConfirmError ? error.message : "Toss confirmation failed"
-      await markPaymentFailed(prisma, payment.id, reason)
-      throw error
-    }
 
     const tossGuard = validateTossApproval({
       expectedOrderId: payment.orderId,
